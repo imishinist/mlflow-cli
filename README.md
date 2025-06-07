@@ -1,0 +1,256 @@
+# MLflow CLI Tool
+
+A command-line tool for MLflow tracking operations built with Go.
+
+## Features
+
+- ✅ Create and manage MLflow runs
+- ✅ Log parameters (single or batch from file)
+- ✅ Log metrics (single or batch from file)
+- ✅ Time series processing with configurable resolution
+- 🚧 Log artifacts (planned)
+
+## Installation
+
+```bash
+# Install from GitHub
+go install github.com/imishinist/mlflow-cli@latest
+
+# Or build from source
+git clone https://github.com/imishinist/mlflow-cli.git
+cd mlflow-cli
+make build
+
+# Install locally
+make install
+
+# Cross-compile for multiple platforms
+make cross-compile
+```
+
+## Configuration
+
+The tool uses environment variables for configuration:
+
+```bash
+export MLFLOW_TRACKING_URI=http://localhost:8885  # MLflow server URL
+export MLFLOW_EXPERIMENT_ID=123456789             # Default experiment ID
+export MLFLOW_TIME_RESOLUTION=1m                  # Time resolution (1m, 5m, 1h)
+export MLFLOW_TIME_ALIGNMENT=floor                # Time alignment (floor, ceil, round)
+export MLFLOW_STEP_MODE=auto                      # Step mode (auto, timestamp, sequence)
+```
+
+### Databricks MLflow
+
+To use Databricks MLflow, you have several options:
+
+#### Option 1: Use `databricks` with environment variables
+```bash
+export MLFLOW_TRACKING_URI=databricks
+export DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+export DATABRICKS_TOKEN=your-databricks-token
+export MLFLOW_EXPERIMENT_ID=123456789
+```
+
+#### Option 2: Use `databricks://{profile}` with Databricks CLI profiles
+```bash
+export MLFLOW_TRACKING_URI=databricks://my-profile
+export MLFLOW_EXPERIMENT_ID=123456789
+```
+
+#### Option 3: Use full Databricks URL
+```bash
+export MLFLOW_TRACKING_URI=https://your-workspace.cloud.databricks.com
+export DATABRICKS_TOKEN=your-databricks-token
+export MLFLOW_EXPERIMENT_ID=123456789
+```
+
+The tool automatically detects Databricks URLs and uses appropriate authentication. When using profiles, make sure your Databricks CLI is configured with `databricks configure --token`.
+
+## Usage
+
+### 1. Start a new run
+
+```bash
+# Start run with environment variable experiment ID
+mlflow-cli run start --run-name "test-run-1"
+
+# Start run with explicit experiment ID
+mlflow-cli run start --experiment-id "1" --run-name "test-run-1"
+
+# With tags and description
+mlflow-cli run start \
+  --experiment-id "1" \
+  --run-name "test-run-1" \
+  --tag "version=1.0" \
+  --tag "env=production" \
+  --description "Performance test run"
+```
+
+### 2. Log parameters
+
+```bash
+# Log single parameters
+mlflow-cli log params --run-id <run-id> --param batch_size=100 --param learning_rate=0.001
+
+# Log parameters from file
+mlflow-cli log params --run-id <run-id> --from-file test_params.json
+```
+
+### 3. Log metrics
+
+```bash
+# Log single metric
+mlflow-cli log metric --run-id <run-id> --name "accuracy" --value 0.95 --step 1
+
+# Log metrics from file
+mlflow-cli log metrics --run-id <run-id> --from-file test_metrics.json
+
+# With custom time processing
+mlflow-cli log metrics \
+  --run-id <run-id> \
+  --from-file test_metrics.json \
+  --time-resolution 5m \
+  --time-alignment ceil \
+  --step-mode timestamp
+```
+
+### 4. End a run
+
+```bash
+# End run successfully
+mlflow-cli run end --run-id <run-id> --status FINISHED
+
+# End run with failure
+mlflow-cli run end --run-id <run-id> --status FAILED
+```
+
+## File Formats
+
+### Parameters File (JSON)
+```json
+{
+  "parameters": {
+    "batch_size": "100",
+    "learning_rate": "0.001",
+    "epochs": "50"
+  }
+}
+```
+
+### Parameters File (YAML)
+```yaml
+parameters:
+  batch_size: "100"
+  learning_rate: "0.001"
+  epochs: "50"
+```
+
+### Metrics File (JSON)
+```json
+{
+  "metrics": [
+    {
+      "timestamp": "2025-06-07T14:01:00Z",
+      "execution_time": 1.5,
+      "success_rate": 0.95,
+      "error_count": 2
+    },
+    {
+      "timestamp": "2025-06-07T14:02:00Z",
+      "execution_time": 1.3,
+      "success_rate": 0.97,
+      "error_count": 1
+    }
+  ]
+}
+```
+
+### Metrics File (YAML)
+```yaml
+metrics:
+  - timestamp: "2025-06-07T14:01:00Z"
+    execution_time: 1.5
+    success_rate: 0.95
+    error_count: 2
+  - timestamp: "2025-06-07T14:02:00Z"
+    execution_time: 1.3
+    success_rate: 0.97
+    error_count: 1
+```
+
+## Time Series Processing
+
+The tool automatically processes time series data to ensure consistency:
+
+- **Time Resolution**: Aligns all timestamps to specified intervals (1m, 5m, 1h)
+- **Time Alignment**: Controls how timestamps are rounded (floor, ceil, round)
+- **Step Mode**: Determines how step numbers are generated
+  - `auto`: Use timestamp-based steps if timestamps exist, otherwise sequence
+  - `timestamp`: Convert timestamps to minutes from base time
+  - `sequence`: Use sequential numbering (0, 1, 2, ...)
+
+## Example Workflow
+
+```bash
+# Set environment
+export MLFLOW_TRACKING_URI=http://localhost:8885
+export MLFLOW_EXPERIMENT_ID=123456789
+
+# Start run (outputs only run ID for shell scripting)
+RUN_ID=$(mlflow-cli run start --run-name "batch-100-test")
+echo "Started run: $RUN_ID"
+
+# Log parameters
+mlflow-cli log params --run-id $RUN_ID --param batch_size=100 --param timeout=300
+
+# Run your experiment
+./run_experiment.sh  # This should generate test_metrics.json
+
+# Log metrics
+mlflow-cli log metrics --run-id $RUN_ID --from-file test_metrics.json
+
+# End run
+mlflow-cli run end --run-id $RUN_ID --status FINISHED
+```
+
+## Shell Integration
+
+The `run start` command outputs only the Run ID to stdout, making it easy to capture in shell variables:
+
+```bash
+# Capture run ID
+RUN_ID=$(mlflow-cli run start --run-name "my-run")
+
+# Use in subsequent commands
+mlflow-cli log params --run-id $RUN_ID --param key=value
+mlflow-cli log metric --run-id $RUN_ID --name accuracy --value 0.95
+mlflow-cli run end --run-id $RUN_ID --status FINISHED
+```
+
+## Development
+
+```bash
+# Install dependencies
+make deps
+
+# Build
+make build
+
+# Run tests
+make test
+
+# Development build with race detection
+make dev
+```
+
+## Requirements
+
+- Go 1.21+
+- MLflow server running and accessible
+
+## Notes
+
+- Port 5000 is often used by Apple AirPlay on macOS. Use a different port (e.g., 5001) for MLflow server.
+- The tool uses MLflow REST API directly for maximum compatibility.
+- Time series processing ensures all metrics can be compared on the same timeline.

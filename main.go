@@ -1,9 +1,13 @@
 package main
 
 import (
-	"fmt"
+	"os"
+
+	"github.com/imishinist/mlflow-cli/cmd"
 )
 
 func main() {
-	fmt.Println("Hello")
+	if err := cmd.Execute(); err != nil {
+		os.Exit(1)
+	}
 }
