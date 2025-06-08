@@ -1,0 +1,11 @@
+This is a sample model file for testing artifact upload.
+Model version: 1.0.0
+Training accuracy: 0.95
+Validation accuracy: 0.92
+
+Parameters:
+- learning_rate: 0.001
+- batch_size: 32
+- epochs: 100
+
+This file simulates a trained model artifact.

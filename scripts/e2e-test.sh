@@ -140,6 +140,90 @@ verify_metric() {
     fi
 }
 
+verify_artifact() {
+    local run_id="$1"
+    local artifact_path="$2"
+    local expected_content="$3"
+
+    # Get run info to extract experiment ID for the download URL
+    local run_info
+    run_info=$(curl -s "$MLFLOW_TRACKING_URI/api/2.0/mlflow/runs/get?run_id=$run_id" 2>/dev/null)
+
+    if [ $? -eq 0 ]; then
+        local experiment_id
+        experiment_id=$(echo "$run_info" | grep -o '"experiment_id": *"[^"]*"' | cut -d'"' -f4)
+
+        if [ -n "$experiment_id" ]; then
+            # Use MLflow artifacts API to download artifact and check content
+            local artifact_content
+            artifact_content=$(curl -s "$MLFLOW_TRACKING_URI/api/2.0/mlflow-artifacts/artifacts/$experiment_id/$run_id/artifacts/$artifact_path" 2>/dev/null)
+
+            if [ $? -eq 0 ] && [ -n "$artifact_content" ]; then
+                if echo "$artifact_content" | grep -q "$expected_content"; then
+                    return 0
+                fi
+
+                # Debug: Print artifact content if in debug mode
+                if [ "$DEBUG_MODE" = true ]; then
+                    echo "  Debug - Artifact content: $artifact_content"
+                fi
+            fi
+        fi
+    fi
+
+    return 1
+}
+
+verify_artifact_exists() {
+    local run_id="$1"
+    local artifact_path="$2"
+
+    # Use MLflow API to list artifacts and check if the artifact exists
+    local artifacts_response
+    artifacts_response=$(curl -s "$MLFLOW_TRACKING_URI/api/2.0/mlflow/artifacts/list?run_id=$run_id" 2>/dev/null)
+
+    if [ $? -eq 0 ]; then
+        # Check if the artifact path exists in the files array (for root level files)
+        if echo "$artifacts_response" | grep -q "\"path\": *\"$artifact_path\""; then
+            return 0
+        fi
+
+        # For nested paths, check if parent directory exists and then check specific path
+        local parent_dir
+        parent_dir=$(dirname "$artifact_path")
+        if [ "$parent_dir" != "." ] && [ "$parent_dir" != "/" ]; then
+            local nested_response
+            nested_response=$(curl -s "$MLFLOW_TRACKING_URI/api/2.0/mlflow/artifacts/list?run_id=$run_id&path=$parent_dir" 2>/dev/null)
+
+            # Check if the full path exists in nested response
+            if echo "$nested_response" | grep -q "\"path\": *\"$artifact_path\""; then
+                if [ "$DEBUG_MODE" = true ]; then
+                    echo "  Debug - Found artifact: $artifact_path"
+                fi
+                return 0
+            fi
+
+            # Additional debug for troubleshooting
+            if [ "$DEBUG_MODE" = true ]; then
+                echo "  Debug - Grep command: echo \"\$nested_response\" | grep -q '\"path\": *\"$artifact_path\"'"
+                echo "  Debug - Grep result:"
+                echo "$nested_response" | grep "\"path\": *\"$artifact_path\"" || echo "    No match found"
+            fi
+        fi
+
+        # Debug: Print the actual response if in debug mode
+        if [ "$DEBUG_MODE" = true ]; then
+            echo "  Debug - Artifacts response: $artifacts_response"
+            if [ "$parent_dir" != "." ] && [ "$parent_dir" != "/" ]; then
+                echo "  Debug - Nested response for $parent_dir: $nested_response"
+                echo "  Debug - Looking for path: $artifact_path"
+            fi
+        fi
+    fi
+
+    return 1
+}
+
 count_metric_points() {
     local run_id="$1"
     local metric_key="$2"
@@ -268,6 +352,15 @@ main() {
 
     run_test "Log metrics with time processing" \
         "$BINARY_PATH log metrics --run-id $RUN_ID --from-file test/fixtures/test_metrics.json --time-resolution 1m --time-alignment floor --step-mode timestamp"
+
+    run_test "Upload single artifact" \
+        "$BINARY_PATH log artifact --run-id $RUN_ID --file test/fixtures/sample_model.txt"
+
+    run_test "Upload artifact with custom path" \
+        "$BINARY_PATH log artifact --run-id $RUN_ID --file test/fixtures/config.yaml --artifact-path models/config.yaml"
+
+    run_test "Upload multiple artifacts" \
+        "$BINARY_PATH log artifact --run-id $RUN_ID --file test/fixtures/sample_model.txt --file test/fixtures/config.yaml"
 
     run_test "End run with FINISHED status" \
         "$BINARY_PATH run end --run-id $RUN_ID --status FINISHED"
@@ -446,6 +539,44 @@ main() {
     else
         echo "${RED}[FAIL]${NC}"
         echo "  Expected: ≥12 parameters, got: $PARAM_COUNT"
+        ((TESTS_FAILED++))
+    fi
+    ((TESTS_TOTAL++))
+
+    # Test 20-22: Verify uploaded artifacts
+    printf "%-50s " "Verify single artifact exists"
+    if verify_artifact_exists "$RUN_ID" "sample_model.txt"; then
+        echo "${GREEN}[ OK ]${NC}"
+        ((TESTS_PASSED++))
+    else
+        echo "${RED}[FAIL]${NC}"
+        echo "  Expected: sample_model.txt artifact to exist"
+        ((TESTS_FAILED++))
+    fi
+    ((TESTS_TOTAL++))
+
+    printf "%-50s " "Verify artifact with custom path exists"
+    if verify_artifact_exists "$RUN_ID" "models/config.yaml"; then
+        echo "${GREEN}[ OK ]${NC}"
+        ((TESTS_PASSED++))
+    else
+        echo "${RED}[FAIL]${NC}"
+        echo "  Expected: models/config.yaml artifact to exist"
+        ((TESTS_FAILED++))
+    fi
+    ((TESTS_TOTAL++))
+
+    printf "%-50s " "Verify artifact content"
+    if verify_artifact "$RUN_ID" "sample_model.txt" "Model version: 1.0.0"; then
+        echo "${GREEN}[ OK ]${NC}"
+        ((TESTS_PASSED++))
+    else
+        echo "${RED}[FAIL]${NC}"
+        echo "  Expected: sample_model.txt to contain 'Model version: 1.0.0'"
+        if [ "$DEBUG_MODE" = true ]; then
+            echo "  Artifact content:"
+            curl -s "$MLFLOW_TRACKING_URI/api/2.0/mlflow/artifacts/get?run_id=$RUN_ID&path=sample_model.txt" | head -5
+        fi
         ((TESTS_FAILED++))
     fi
     ((TESTS_TOTAL++))

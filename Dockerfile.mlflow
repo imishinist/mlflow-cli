@@ -7,7 +7,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install MLflow
-RUN pip install --no-cache-dir mlflow==2.8.1
+RUN pip install --no-cache-dir mlflow==2.22.0
 
 # Create directories
 RUN mkdir -p /tmp/artifacts
@@ -21,7 +21,6 @@ WORKDIR /tmp
 # Default command
 CMD ["mlflow", "server", \
      "--backend-store-uri", "sqlite:////tmp/mlflow.db", \
-     "--default-artifact-root", "/tmp/artifacts", \
      "--host", "0.0.0.0", \
      "--port", "5000", \
      "--workers", "1"]
