@@ -8,7 +8,7 @@ A command-line tool for MLflow tracking operations built with Go.
 - ✅ Log parameters (single or batch from file)
 - ✅ Log metrics (single or batch from file)
 - ✅ Time series processing with configurable resolution
-- 🚧 Log artifacts (planned)
+- ✅ Log artifacts (local filesystem and DBFS)
 
 ## Installation
 
@@ -52,7 +52,7 @@ export DATABRICKS_TOKEN=your-databricks-token
 export MLFLOW_EXPERIMENT_ID=123456789
 ```
 
-#### Option 2: Use `databricks://{profile}` with Databricks CLI profiles
+#### Option 2: Use `databricks://{profile}` with Databricks CLI profiles (Recommended)
 ```bash
 export MLFLOW_TRACKING_URI=databricks://my-profile
 export MLFLOW_EXPERIMENT_ID=123456789
@@ -61,11 +61,12 @@ export MLFLOW_EXPERIMENT_ID=123456789
 #### Option 3: Use full Databricks URL
 ```bash
 export MLFLOW_TRACKING_URI=https://your-workspace.cloud.databricks.com
-export DATABRICKS_TOKEN=your-databricks-token
 export MLFLOW_EXPERIMENT_ID=123456789
 ```
 
 The tool automatically detects Databricks URLs and uses appropriate authentication. When using profiles, make sure your Databricks CLI is configured with `databricks configure --token`.
+
+**Note**: For DBFS artifact uploads, all authentication methods are supported. Profile-based authentication is recommended for ease of use.
 
 ## Usage
 
@@ -115,7 +116,51 @@ mlflow-cli log metrics \
   --step-mode timestamp
 ```
 
-### 4. End a run
+### 4. Log artifacts
+
+```bash
+# Log single artifact
+mlflow-cli log artifact --run-id <run-id> --file model.pkl
+
+# Log artifact with custom path
+mlflow-cli log artifact --run-id <run-id> --file model.pkl --artifact-path models/final_model.pkl
+
+# Log multiple artifacts
+mlflow-cli log artifact --run-id <run-id> --file model.pkl --file config.yaml
+```
+
+#### DBFS Artifacts (Databricks)
+
+DBFS artifact uploads support all Databricks authentication methods:
+
+**Option 1: Profile-based authentication (Recommended)**
+```bash
+export MLFLOW_TRACKING_URI=databricks://my-profile
+mlflow-cli log artifact --run-id <run-id> --file model.pkl
+```
+
+**Option 2: Direct Databricks URL**
+```bash
+export MLFLOW_TRACKING_URI=https://your-workspace.cloud.databricks.com
+mlflow-cli log artifact --run-id <run-id> --file model.pkl
+```
+
+**Option 3: Environment variables**
+```bash
+export MLFLOW_TRACKING_URI=databricks
+export DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+mlflow-cli log artifact --run-id <run-id> --file model.pkl
+```
+
+**Supported credential types:**
+- AWS S3 (AWS_PRESIGNED_URL)
+- Azure Blob Storage (AZURE_SAS_URI)
+- Google Cloud Storage (GCP_SIGNED_URL)
+- Azure Data Lake Storage Gen2 (AZURE_ADLS_GEN2_SAS_URI)
+
+**Note**: All authentication methods are fully supported for DBFS artifacts. Profile-based authentication is recommended for ease of use.
+
+### 5. End a run
 
 ```bash
 # End run successfully
@@ -249,8 +294,8 @@ The tool automatically processes time series data to ensure consistency:
 ## Example Workflow
 
 ```bash
-# Set environment
-export MLFLOW_TRACKING_URI=http://localhost:5001  # Note: Using 5001 for E2E tests
+# Set environment (using profile-based authentication)
+export MLFLOW_TRACKING_URI=databricks://my-profile
 export MLFLOW_EXPERIMENT_ID=123456789
 
 # Start run (outputs only run ID for shell scripting)
@@ -265,6 +310,9 @@ mlflow-cli log params --run-id $RUN_ID --param batch_size=100 --param timeout=30
 
 # Log metrics
 mlflow-cli log metrics --run-id $RUN_ID --from-file test_metrics.json
+
+# Log artifacts (including DBFS support)
+mlflow-cli log artifact --run-id $RUN_ID --file model.pkl --file config.yaml
 
 # End run
 mlflow-cli run end --run-id $RUN_ID --status FINISHED

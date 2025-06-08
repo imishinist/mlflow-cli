@@ -10,8 +10,35 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/databricks/databricks-sdk-go/httpclient"
 	"github.com/databricks/databricks-sdk-go/service/ml"
 )
+
+// CredentialsForWriteRequest represents the request for credentials-for-write API
+type CredentialsForWriteRequest struct {
+	RunID string   `json:"run_id"`
+	Path  []string `json:"path"`
+}
+
+// CredentialsForWriteResponse represents the response from credentials-for-write API
+type CredentialsForWriteResponse struct {
+	CredentialInfos []ArtifactCredentialInfo `json:"credential_infos"`
+}
+
+// ArtifactCredentialInfo represents artifact credential information
+type ArtifactCredentialInfo struct {
+	RunID     string       `json:"run_id"`
+	Path      string       `json:"path"`
+	SignedURI string       `json:"signed_uri"`
+	Headers   []HTTPHeader `json:"headers"`
+	Type      string       `json:"type"`
+}
+
+// HTTPHeader represents HTTP header
+type HTTPHeader struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
 
 // UploadArtifact uploads a file as an artifact to the specified run
 func (c *Client) UploadArtifact(ctx context.Context, runID, filePath, artifactPath string) error {
@@ -136,6 +163,8 @@ func (c *Client) getArtifactURIFromHTTP(ctx context.Context, runID string) (stri
 func (c *Client) uploadToStorage(ctx context.Context, artifactURI, filePath, artifactPath string) error {
 	if strings.HasPrefix(artifactURI, "mlflow-artifacts:/") {
 		return c.uploadToMLflowArtifacts(ctx, artifactURI, filePath, artifactPath)
+	} else if strings.HasPrefix(artifactURI, "dbfs:/") {
+		return c.uploadToDBFS(ctx, artifactURI, filePath, artifactPath)
 	} else if strings.HasPrefix(artifactURI, "file://") || strings.HasPrefix(artifactURI, "/") {
 		return c.uploadToLocalFS(ctx, artifactURI, filePath, artifactPath)
 	} else {
@@ -247,7 +276,173 @@ func (c *Client) extractIDsFromArtifactURI(artifactURI string) (string, string, 
 // addAuthHeaders adds appropriate authentication headers to the request
 func (c *Client) addAuthHeaders(req *http.Request) {
 	// Handle Databricks authentication
-	if c.config.IsDatabricks() && c.config.DatabricksToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.config.DatabricksToken)
+	if c.config.IsDatabricks() {
+		// Use token from SDK client if available
+		if c.client != nil && c.client.Config != nil && c.client.Config.Token != "" {
+			req.Header.Set("Authorization", "Bearer "+c.client.Config.Token)
+		} else if c.config.DatabricksToken != "" {
+			req.Header.Set("Authorization", "Bearer "+c.config.DatabricksToken)
+		}
 	}
+}
+
+// uploadToDBFS uploads file to DBFS using Databricks Artifacts API
+func (c *Client) uploadToDBFS(ctx context.Context, artifactURI, filePath, artifactPath string) error {
+	// Extract run_id from artifactURI
+	runID, err := c.extractRunIDFromDBFSURI(artifactURI)
+	if err != nil {
+		return fmt.Errorf("failed to extract run ID from DBFS URI: %w", err)
+	}
+
+	// Get credentials for write
+	credentials, err := c.getCredentialsForWrite(ctx, runID, []string{artifactPath})
+	if err != nil {
+		return fmt.Errorf("failed to get write credentials: %w", err)
+	}
+
+	if len(credentials) == 0 {
+		return fmt.Errorf("no credentials returned for path: %s", artifactPath)
+	}
+
+	// Upload to signed URI (supports all credential types)
+	err = c.uploadToSignedURI(ctx, credentials[0], filePath)
+	if err != nil {
+		return fmt.Errorf("failed to upload to %s signed URI: %w", credentials[0].Type, err)
+	}
+
+	return nil
+}
+
+// extractRunIDFromDBFSURI extracts run ID from DBFS artifact URI
+func (c *Client) extractRunIDFromDBFSURI(artifactURI string) (string, error) {
+	// dbfs:/databricks/mlflow-tracking/{experiment_id}/{run_id}/artifacts
+	if !strings.HasPrefix(artifactURI, "dbfs:/databricks/mlflow-tracking/") {
+		return "", fmt.Errorf("invalid DBFS artifact URI format: %s", artifactURI)
+	}
+
+	// Remove prefix and split by /
+	path := strings.TrimPrefix(artifactURI, "dbfs:/databricks/mlflow-tracking/")
+	parts := strings.Split(path, "/")
+
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid DBFS artifact URI format: %s", artifactURI)
+	}
+
+	// parts[0] = experiment_id, parts[1] = run_id
+	runID := parts[1]
+	if runID == "" {
+		return "", fmt.Errorf("run ID not found in DBFS URI: %s", artifactURI)
+	}
+
+	return runID, nil
+}
+
+// getCredentialsForWrite gets write credentials from Databricks Artifacts API
+// getCredentialsForWrite gets credentials using Databricks SDK API client
+func (c *Client) getCredentialsForWrite(ctx context.Context, runID string, paths []string) ([]ArtifactCredentialInfo, error) {
+	request := CredentialsForWriteRequest{
+		RunID: runID,
+		Path:  paths,
+	}
+
+	var response CredentialsForWriteResponse
+
+	// Use pre-created API client for authenticated requests
+	if c.config.IsDatabricks() && c.apiClient != nil {
+		// Use SDK's Do method for authenticated HTTP request
+		err := c.apiClient.Do(ctx, "POST", "/api/2.0/mlflow/artifacts/credentials-for-write",
+			httpclient.WithRequestData(request),
+			httpclient.WithResponseUnmarshal(&response),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("credentials-for-write request failed: %w", err)
+		}
+
+		return response.CredentialInfos, nil
+	}
+
+	// Fallback for non-Databricks environments (not implemented)
+	return nil, fmt.Errorf("non-Databricks MLflow servers not supported for DBFS artifacts")
+}
+
+// uploadToSignedURI uploads file to any type of signed URI
+func (c *Client) uploadToSignedURI(ctx context.Context, credential ArtifactCredentialInfo, filePath string) error {
+	// Open file
+	file, fileInfo, err := c.openFileWithInfo(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Create request based on credential type
+	req, err := c.createSignedURIRequest(ctx, credential, file, fileInfo.Size())
+	if err != nil {
+		return err
+	}
+
+	// Send request
+	return c.sendSignedURIRequest(req)
+}
+
+// createSignedURIRequest creates HTTP request based on credential type
+func (c *Client) createSignedURIRequest(ctx context.Context, credential ArtifactCredentialInfo, body io.Reader, contentLength int64) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, "PUT", credential.SignedURI, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set Content-Length explicitly (required by some cloud providers)
+	req.ContentLength = contentLength
+	req.Header.Set("Content-Length", fmt.Sprintf("%d", contentLength))
+
+	// Set type-specific headers
+	switch credential.Type {
+	case "AWS_PRESIGNED_URL":
+		req.Header.Set("Content-Type", "application/octet-stream")
+
+	case "AZURE_SAS_URI":
+		req.Header.Set("Content-Type", "application/octet-stream")
+		req.Header.Set("x-ms-blob-type", "BlockBlob")
+
+	case "GCP_SIGNED_URL":
+		req.Header.Set("Content-Type", "application/octet-stream")
+
+	case "AZURE_ADLS_GEN2_SAS_URI":
+		req.Header.Set("Content-Type", "application/octet-stream")
+
+	default:
+		// Fallback for unknown types
+		req.Header.Set("Content-Type", "application/octet-stream")
+	}
+
+	// Add custom headers from credential
+	for _, header := range credential.Headers {
+		req.Header.Set(header.Name, header.Value)
+	}
+
+	return req, nil
+}
+
+// sendSignedURIRequest sends request and handles response
+func (c *Client) sendSignedURIRequest(req *http.Request) error {
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to upload to signed URI: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check status code
+	if !c.isSuccessStatusCode(resp.StatusCode) {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("signed URI upload failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	return nil
+}
+
+// isSuccessStatusCode checks if status code indicates success
+func (c *Client) isSuccessStatusCode(statusCode int) bool {
+	// Most cloud providers return 200 or 201 for successful uploads
+	return statusCode >= 200 && statusCode < 300
 }

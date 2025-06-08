@@ -4,14 +4,16 @@ import (
 	"fmt"
 
 	"github.com/databricks/databricks-sdk-go"
+	"github.com/databricks/databricks-sdk-go/httpclient"
 
 	"github.com/imishinist/mlflow-cli/internal/config"
 )
 
 // Client wraps the Databricks SDK client for MLflow operations
 type Client struct {
-	client *databricks.WorkspaceClient
-	config *config.Config
+	client    *databricks.WorkspaceClient
+	config    *config.Config
+	apiClient *httpclient.ApiClient
 }
 
 // NewClient creates a new MLflow client with appropriate configuration
@@ -30,9 +32,19 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		return nil, fmt.Errorf("failed to create MLflow client: %w", err)
 	}
 
+	// Create API client for DBFS artifacts if this is a Databricks client
+	var apiClient *httpclient.ApiClient
+	if cfg.IsDatabricks() && client != nil {
+		apiClient, err = client.Config.NewApiClient()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create API client: %w", err)
+		}
+	}
+
 	return &Client{
-		client: client,
-		config: cfg,
+		client:    client,
+		config:    cfg,
+		apiClient: apiClient,
 	}, nil
 }
 
