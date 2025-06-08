@@ -1,0 +1,6 @@
+parameters:
+  yaml_batch_size: "64"
+  yaml_learning_rate: "0.01"
+  yaml_epochs: "100"
+  yaml_model_type: "cnn"
+  yaml_regularization: "l2"

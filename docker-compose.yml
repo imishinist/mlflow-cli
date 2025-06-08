@@ -1,0 +1,17 @@
+services:
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    container_name: mlflow-server
+    ports:
+      - "5001:5000"
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:////tmp/mlflow.db
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/tmp/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/2.0/mlflow/experiments/search", "-H", "Content-Type: application/json", "-d", "{\"max_results\": 1}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

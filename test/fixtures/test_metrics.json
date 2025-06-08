@@ -1,0 +1,32 @@
+{
+  "metrics": [
+    {
+      "timestamp": "2025-06-08T00:01:00Z",
+      "accuracy": 0.85,
+      "loss": 0.45,
+      "val_accuracy": 0.82,
+      "val_loss": 0.48
+    },
+    {
+      "timestamp": "2025-06-08T00:02:00Z",
+      "accuracy": 0.87,
+      "loss": 0.42,
+      "val_accuracy": 0.84,
+      "val_loss": 0.46
+    },
+    {
+      "timestamp": "2025-06-08T00:03:00Z",
+      "accuracy": 0.89,
+      "loss": 0.39,
+      "val_accuracy": 0.86,
+      "val_loss": 0.44
+    },
+    {
+      "timestamp": "2025-06-08T00:04:00Z",
+      "accuracy": 0.91,
+      "loss": 0.36,
+      "val_accuracy": 0.88,
+      "val_loss": 0.42
+    }
+  ]
+}

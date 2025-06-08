@@ -179,6 +179,62 @@ metrics:
     error_count: 1
 ```
 
+## Testing
+
+### Unit Tests
+```bash
+make test
+```
+
+### E2E Tests
+The project includes comprehensive E2E tests that use Docker Compose to run a real MLflow server:
+
+```bash
+# Build MLflow Docker image (first time only)
+make docker-build
+
+# Recommended development workflow:
+make docker-up       # Start MLflow server once
+make e2e-test        # Run E2E tests (fast mode, default)
+make e2e-test-debug  # Run with debug output (fast mode)
+make docker-down     # Stop server when done
+
+# Full E2E tests (with Docker setup/teardown)
+make e2e-test-all       # Full mode with Docker management
+make e2e-test-full      # Alias for e2e-test-all
+make e2e-test-all-debug # Full mode with debug output
+
+# Docker operations
+make docker-up    # Start MLflow at http://localhost:5001
+make docker-down  # Stop and clean up
+make docker-logs  # View server logs
+
+# Get help
+make help         # Show all available targets
+```
+
+**Development workflow (recommended):**
+1. Start MLflow server once: `make docker-up`
+2. Run tests multiple times: `make e2e-test` (fast, ~2 seconds)
+3. Stop server when done: `make docker-down`
+
+**Test modes:**
+- **Fast mode** (`make e2e-test`): Uses existing MLflow server, ~2 seconds
+- **Full mode** (`make e2e-test-all`): Manages Docker lifecycle, ~30 seconds
+
+The E2E tests use a custom Docker image with pre-installed MLflow for faster startup times.
+
+The E2E tests cover:
+- Run lifecycle (start/end)
+- Parameter logging (single and batch from JSON/YAML files)
+- Metric logging (single and batch from JSON/YAML files)
+- Time series processing with different configurations
+- **Data verification**: Confirms that logged data can be retrieved correctly
+- **Parameter validation**: Verifies parameter values match expected inputs
+- **Metric validation**: Confirms metric values and time series data points
+- Error handling and validation
+- API integration verification
+
 ## Time Series Processing
 
 The tool automatically processes time series data to ensure consistency:
@@ -194,7 +250,7 @@ The tool automatically processes time series data to ensure consistency:
 
 ```bash
 # Set environment
-export MLFLOW_TRACKING_URI=http://localhost:8885
+export MLFLOW_TRACKING_URI=http://localhost:5001  # Note: Using 5001 for E2E tests
 export MLFLOW_EXPERIMENT_ID=123456789
 
 # Start run (outputs only run ID for shell scripting)

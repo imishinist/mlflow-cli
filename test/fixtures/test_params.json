@@ -1,0 +1,9 @@
+{
+  "parameters": {
+    "json_batch_size": "100",
+    "json_learning_rate": "0.001",
+    "json_epochs": "50",
+    "json_optimizer": "adam",
+    "json_dropout_rate": "0.2"
+  }
+}
