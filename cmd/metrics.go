@@ -8,12 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/imishinist/mlflow-cli/internal/config"
 	"github.com/imishinist/mlflow-cli/internal/mlflow"
 	"github.com/imishinist/mlflow-cli/internal/models"
 	"github.com/imishinist/mlflow-cli/internal/parser"
 	timeutils "github.com/imishinist/mlflow-cli/internal/time"
-	"github.com/spf13/cobra"
 )
 
 var logMetricCmd = &cobra.Command{

@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/imishinist/mlflow-cli/internal/models"
 	"gopkg.in/yaml.v3"
+
+	"github.com/imishinist/mlflow-cli/internal/models"
 )
 
 func ParseYAMLParams(reader io.Reader) (map[string]string, error) {

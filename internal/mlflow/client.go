@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/databricks/databricks-sdk-go"
+
 	"github.com/imishinist/mlflow-cli/internal/config"
 )
 

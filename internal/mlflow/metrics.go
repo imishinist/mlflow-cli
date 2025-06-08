@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/databricks/databricks-sdk-go/service/ml"
+
 	"github.com/imishinist/mlflow-cli/internal/models"
 )
 

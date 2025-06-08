@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/imishinist/mlflow-cli/internal/config"
 	"github.com/imishinist/mlflow-cli/internal/mlflow"
 	"github.com/imishinist/mlflow-cli/internal/models"
-	"github.com/spf13/cobra"
 )
 
 // Valid run statuses

@@ -7,10 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/imishinist/mlflow-cli/internal/config"
 	"github.com/imishinist/mlflow-cli/internal/mlflow"
 	"github.com/imishinist/mlflow-cli/internal/parser"
-	"github.com/spf13/cobra"
 )
 
 var logCmd = &cobra.Command{
