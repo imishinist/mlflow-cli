@@ -11,6 +11,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Valid run statuses
+var validRunStatuses = map[string]models.RunStatus{
+	"FINISHED": models.RunStatusFinished,
+	"FAILED":   models.RunStatusFailed,
+	"KILLED":   models.RunStatusKilled,
+}
+
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Manage MLflow runs",
@@ -55,44 +62,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create MLflow client: %w", err)
 	}
 
-	// Parse flags
-	experimentID, _ := cmd.Flags().GetString("experiment-id")
-	runName, _ := cmd.Flags().GetString("run-name")
-	tags, _ := cmd.Flags().GetStringArray("tag")
-	description, _ := cmd.Flags().GetString("description")
-
-	// Use experiment ID from flag, environment variable, or config
-	if experimentID == "" {
-		experimentID = cfg.ExperimentID
-	}
-
-	// Validate experiment ID
-	if experimentID == "" {
-		return fmt.Errorf("experiment ID must be specified via --experiment-id flag or MLFLOW_EXPERIMENT_ID environment variable")
-	}
-
-	// Parse tags
-	tagMap := make(map[string]string)
-	for _, tag := range tags {
-		parts := strings.SplitN(tag, "=", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid tag format: %s (expected key=value)", tag)
-		}
-		tagMap[parts[0]] = parts[1]
-	}
-
-	// Build run config
-	runConfig := &models.RunConfig{
-		ExperimentID: &experimentID,
-		Tags:         tagMap,
-	}
-	if runName != "" {
-		runConfig.RunName = &runName
-	}
-	if description != "" {
-		// Process escape sequences in description
-		processedDescription := processEscapeSequences(description)
-		runConfig.Description = &processedDescription
+	runConfig, err := buildRunConfig(cmd, cfg)
+	if err != nil {
+		return err
 	}
 
 	// Create run
@@ -108,6 +80,62 @@ func runStart(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// buildRunConfig constructs RunConfig from command flags and configuration
+func buildRunConfig(cmd *cobra.Command, cfg *config.Config) (*models.RunConfig, error) {
+	// Parse flags
+	experimentID, _ := cmd.Flags().GetString("experiment-id")
+	runName, _ := cmd.Flags().GetString("run-name")
+	tags, _ := cmd.Flags().GetStringArray("tag")
+	description, _ := cmd.Flags().GetString("description")
+
+	// Use experiment ID from flag, environment variable, or config
+	if experimentID == "" {
+		experimentID = cfg.ExperimentID
+	}
+
+	// Validate experiment ID
+	if experimentID == "" {
+		return nil, fmt.Errorf("experiment ID must be specified via --experiment-id flag or MLFLOW_EXPERIMENT_ID environment variable")
+	}
+
+	// Parse tags
+	tagMap, err := parseTags(tags)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build run config
+	runConfig := &models.RunConfig{
+		ExperimentID: &experimentID,
+		Tags:         tagMap,
+	}
+
+	if runName != "" {
+		runConfig.RunName = &runName
+	}
+
+	if description != "" {
+		// Process escape sequences in description
+		processedDescription := processEscapeSequences(description)
+		runConfig.Description = &processedDescription
+	}
+
+	return runConfig, nil
+}
+
+// parseTags parses tag strings in key=value format
+func parseTags(tags []string) (map[string]string, error) {
+	tagMap := make(map[string]string)
+	for _, tag := range tags {
+		parts := strings.SplitN(tag, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid tag format: %s (expected key=value)", tag)
+		}
+		tagMap[parts[0]] = parts[1]
+	}
+	return tagMap, nil
+}
+
 func runEnd(cmd *cobra.Command, args []string) error {
 	cfg := config.New()
 	client, err := mlflow.NewClient(cfg)
@@ -120,13 +148,7 @@ func runEnd(cmd *cobra.Command, args []string) error {
 	status, _ := cmd.Flags().GetString("status")
 
 	// Validate status
-	validStatuses := map[string]models.RunStatus{
-		"FINISHED": models.RunStatusFinished,
-		"FAILED":   models.RunStatusFailed,
-		"KILLED":   models.RunStatusKilled,
-	}
-
-	runStatus, valid := validStatuses[status]
+	runStatus, valid := validRunStatuses[status]
 	if !valid {
 		return fmt.Errorf("invalid status: %s (valid: FINISHED, FAILED, KILLED)", status)
 	}
