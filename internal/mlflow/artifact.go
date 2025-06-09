@@ -399,6 +399,8 @@ func (c *Client) createSignedURIRequest(ctx context.Context, credential Artifact
 	switch credential.Type {
 	case "AWS_PRESIGNED_URL":
 		req.Header.Set("Content-Type", "application/octet-stream")
+		// S3 does not support Transfer-Encoding header, explicitly remove it
+		req.Header.Del("Transfer-Encoding")
 
 	case "AZURE_SAS_URI":
 		req.Header.Set("Content-Type", "application/octet-stream")
