@@ -6,10 +6,13 @@ toolchain go1.24.2
 
 require (
 	github.com/databricks/databricks-sdk-go v0.72.0
+	github.com/imishinist/mlflow-artifact-uploader v0.0.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/imishinist/mlflow-artifact-uploader => ./mlflow-artifact-uploader
 
 require (
 	cloud.google.com/go/auth v0.13.0 // indirect
